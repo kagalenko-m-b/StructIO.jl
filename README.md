@@ -1,9 +1,8 @@
 # StructIO
 
-[![StructIO](http://pkg.julialang.org/badges/StructIO_0.6.svg)](http://pkg.julialang.org/?pkg=StructIO)
-[![StructIO](http://pkg.julialang.org/badges/StructIO_0.7.svg)](http://pkg.julialang.org/?pkg=StructIO)
-[![Build Status](https://travis-ci.org/Keno/StructIO.jl.svg?branch=master)](https://travis-ci.org/Keno/StructIO.jl)
-[![Coverage](http://codecov.io/github/Keno/StructIO.jl/coverage.svg?branch=master)](http://codecov.io/github/Keno/StructIO.jl?branch=master)
+[![pkgeval](https://juliahub.com/docs/StructIO/pkgeval.svg)](https://juliahub.com/ui/Packages/StructIO/aDnIf)
+[![Build Status](https://github.com/JuliaIO/StructIO.jl/workflows/CI/badge.svg)](https://github.com/JuliaIO/StructIO.jl/actions?query=workflow%3ACI+branch%3Amaster)
+[![Coverage](http://codecov.io/github/JuliaIO/StructIO.jl/coverage.svg?branch=master)](http://codecov.io/github/JuliaIO/StructIO.jl?branch=master)
 
 Generates IO methods (`pack`, `unpack`) from structure definitions.  Also defines `packed_sizeof` to give the on-disk size of a packed structure, which is smaller than `sizeof` would give, if the struct is marked as `align_packed`.
 
