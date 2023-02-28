@@ -23,4 +23,19 @@ TwoUInt64s(0x0807060504030201, 0x100f0e0d0c0b0a09)
 julia> seekstart(buf); unpack(buf, TwoUInt64s, :BigEndian)
 TwoUInt64s(0x0102030405060708, 0x090a0b0c0d0e0f10)
 
+julia> @io struct DefaultExample
+           a::UInt8   # Default packing includes a padding byte between fields
+           b::UInt16
+       end
+
+julia> seekstart(buf); unpack(buf, DefaultExample) # Notice byte 0x02 is not used as part of `b`
+DefaultExample(0x01, 0x0403)
+
+julia> @io struct PackedExample
+           a::UInt8
+           b::UInt16
+       end align_packed
+
+julia> seekstart(buf); unpack(buf, PackedExample) # Now byte 0x02 is used
+PackedExample(0x01, 0x0302)
 ```
