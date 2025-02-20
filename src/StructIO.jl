@@ -50,6 +50,7 @@ end
 
 # Alignment traits
 abstract type PackingStrategy end
+struct Offset <: PackingStrategy; end
 struct Packed <: PackingStrategy; end
 struct Default <: PackingStrategy; end
 
@@ -135,10 +136,24 @@ macro io(typ, annotations...)
     if isexpr(T, :curly)
         T = T.args[1]
     end
-
+    if alignment == :align_default
+        strat = StructIO.Default
+    elseif alignment == :align_packed
+        strat = StructIO.Packed
+    elseif alignment == :align_offset
+        strat = StructIO.Offset
+        field_offsets =  parse_annotations!(typ)
+    else
+         throw(ArgumentError("unknown alignment specification"))
+    end
     ret = Expr(:toplevel, :(Base.@__doc__ $(typ)))
     strat = (alignment == :align_default ? StructIO.Default : StructIO.Packed)
     push!(ret.args, :($StructIO.packing_strategy(::Type{T}) where {T <: $T} = $strat))
+    if strat == Offset
+        push!(ret.args, Expr(:(=),
+                             :($StructIO.fieldoffset(::Type{T},idx::Integer) where {T <: $T}),
+                             :($field_offsets[idx])))
+    end
     return esc(ret)
 end
 
@@ -259,6 +274,12 @@ function unsafe_unpack(io, T, target, endianness, ::Type{Packed})
     end
 end
 
+# `Offset` packing strategy override for `unsafe_unpack`
+function unsafe_unpack(io, T, target, endianness, ::Type{Offset})
+    overlaps_absent(T) || throw(ArgumentError("structure $T fields overlap"))
+    unsafe_unpack(io, T, target, endianness,  Packed)
+end
+
 # `Packed` packing strategy override for `unsafe_pack`
 function unsafe_pack(io, source::Ref{T}, endianness, ::Type{Packed}) where {T}
     # If this type cannot be subdivided, packing strategy means nothing, so
@@ -274,6 +295,12 @@ function unsafe_pack(io, source::Ref{T}, endianness, ::Type{Packed}) where {T}
         f = Ref{fT}(getfield(source[], fieldname(T, i)))
         unsafe_pack(io, f, endianness, Packed)
     end
+end
+
+# `Offset` packing strategy override for `unsafe_pack`
+function unsafe_pack(io, source::Ref{T}, endianness, ::Type{Offset}) where {T}
+    overlaps_absent(T) || throw(ArgumentError("structure $T fields overlap"))
+    unsafe_pack(io, source, endianness, Packed)
 end
 
 """
@@ -309,6 +336,44 @@ function pack(io::IO, source::T, endianness::Symbol = :NativeEndian) where {T}
     packstrat = fieldcount(T) == 0 ? Default : packing_strategy(T)
     unsafe_pack(io, r, endianness, packstrat)
     return nothing
+end
+
+is_declaration(f::Expr) = (f.head === :(::)) && isa.(f.args[1],Symbol)
+function is_annotation(f::Expr)
+    c = (f.head === :call) && (f.args[1] === :~)
+    c = c && is_declaration(f.args[2]) && isa(f.args[3], Integer)
+end
+
+function parse_annotations!(strct_expr)
+    @assert strct_expr.head == :struct
+    K = length(strct_expr.args[3].args)
+    field_offsets = UInt[]
+    for k in 1:length(strct_expr.args[3].args)
+        f = strct_expr.args[3].args[k]
+        !isa(f, LineNumberNode) || continue
+        is_annotation(f) || throw(ArgumentError("all fields must have offset annotations"))
+        push!(field_offsets, f.args[3])
+        strct_expr.args[3].args[k] = f.args[2]
+    end
+    println(Int.(field_offsets))
+    return field_offsets
+end
+
+"""
+Verify that the fields of a structure do not overlap. That may happen with offset
+packing, because it overloads `fieldoffset()` function.
+"""
+function overlaps_absent(::Type{T}) where {T}
+    if fieldcount(T) == 0
+        return true
+    end
+    field_offsets = fieldoffset.(T, 1:fieldcount(T))
+    field_sizes = sizeof.(fieldtypes(T))
+    idx = sortperm(offsets)
+    bounds = Iterators.flatten((f[1], f[1] + f[2] - 1)
+                               for f in zip(offsets[idx], sizes[idx]))
+
+    return issorted(bounds)
 end
 
 end # module
