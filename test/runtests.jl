@@ -42,6 +42,31 @@ This is a docstring
     C::T
 end
 
+@io struct RawData
+    A::UInt32       # offset 0
+    dummy_1::UInt16 # offset 4
+    B::UInt16       # offset 6
+    dummy_2::UInt32 # offset 8
+    C::UInt128      # offset 12
+    dummy_3::UInt16 # offset 28
+    dummy_4::UInt32 # offset 30
+    D::UInt8        # offset 34
+end align_packed
+
+@io struct OffsetStruct
+	A::UInt32  ~ 0
+    C::UInt128 ~ 12
+    B::UInt16  ~ 6
+    D::UInt8   ~ 34
+end align_offset
+
+@io struct OverlappingFields
+	A::UInt32  ~ 0
+    B::UInt16  ~ 6
+    D::UInt8   ~ 27
+    C::UInt128 ~ 12
+end align_offset
+
 @testset "unpack()" begin
     # Test native unpacking
     buf = IOBuffer()
@@ -166,4 +191,25 @@ end
 
 @testset "Documentation" begin
     @test string(@doc ParametricType) == "This is a docstring\n"
+end
+
+@testset "Offset alignment" begin
+    A,B,C,D = 1,2,3,4
+    raw_data = RawData(UInt32(A),0xBEEF,UInt16(B),0xDEADBEEF,UInt128(C),
+                       0xBEEF, 0xDEADBEEF, UInt8(D));
+    missing_annotation = :(@io struct MissingAnnotation
+	                           x::Int ~ 0
+                               y::Int
+	                           z::Int ~ 6
+	                       end align_offset)
+    #
+	@test_throws ArgumentError macroexpand(@__MODULE__, missing_annotation)
+    @test packed_sizeof(RawData) == packed_sizeof(OffsetStruct)
+	for endian in [:LittleEndian, :BigEndian]
+        buf = IOBuffer()
+        pack(buf, raw_data, endian)
+        seekstart(buf)
+        @test unpack(buf, OffsetStruct, endian) == OffsetStruct(A, C, B, D)
+    end
+    @test_throws AssertionError unpack(IOBuffer(), OverlappingFields)
 end

@@ -74,6 +74,14 @@ end
     return sum(packed_sizeof, T.types)
 end
 
+@pure function packed_sizeof(T::DataType, ::Type{Offset})
+    @assert fieldcount(T) != 0 && isbitstype(T)
+    f_offsets = StructIO.stream_offset.(T, 1:fieldcount(T))
+    max_offset,idx_max = findmax(identity, f_offsets)
+    
+    return max_offset + packed_sizeof(T.types[idx_max])
+end
+# Offset struct may be packed with gaps
 @pure function packed_sizeof(T::DataType)
     if fieldcount(T) == 0
         return packed_sizeof(T, Default)
@@ -81,6 +89,8 @@ end
         return packed_sizeof(T, packing_strategy(T))
     end
 end
+
+stream_offset(::Type{T}, idx::Integer) where T = fieldoffset(T, idx)
 
 """
     fieldsize(T::DataType, field_idx)
@@ -147,12 +157,10 @@ macro io(typ, annotations...)
          throw(ArgumentError("unknown alignment specification"))
     end
     ret = Expr(:toplevel, :(Base.@__doc__ $(typ)))
-    strat = (alignment == :align_default ? StructIO.Default : StructIO.Packed)
     push!(ret.args, :($StructIO.packing_strategy(::Type{T}) where {T <: $T} = $strat))
     if strat == Offset
-        push!(ret.args, Expr(:(=),
-                             :($StructIO.fieldoffset(::Type{T},idx::Integer) where {T <: $T}),
-                             :($field_offsets[idx])))
+        push!(ret.args, Expr(:(=), :($StructIO.stream_offset(::Type{T},idx::Integer)
+                                     where {T <: $T}), :($field_offsets[idx])))
     end
     return esc(ret)
 end
@@ -276,8 +284,17 @@ end
 
 # `Offset` packing strategy override for `unsafe_unpack`
 function unsafe_unpack(io, T, target, endianness, ::Type{Offset})
-    overlaps_absent(T) || throw(ArgumentError("structure $T fields overlap"))
-    unsafe_unpack(io, T, target, endianness,  Packed)
+    if fieldcount(T) == 0
+        return unsafe_unpack(io, T, target, endianness, Default)
+    end
+    @assert all(x->x>=0, field_gaps(T)[1]) "packed fields of structure $T overlap"
+    target_ptr = Base.unsafe_convert(Ptr{Cvoid}, target)
+    for i = 1:fieldcount(T)
+        fT = fieldtype(T, i)
+        target_i = target_ptr + fieldoffset(T, i)
+        seek(io, stream_offset(T, i))
+        unsafe_unpack(io, fT, target_i, endianness, Packed)
+    end
 end
 
 # `Packed` packing strategy override for `unsafe_pack`
@@ -299,8 +316,9 @@ end
 
 # `Offset` packing strategy override for `unsafe_pack`
 function unsafe_pack(io, source::Ref{T}, endianness, ::Type{Offset}) where {T}
-    overlaps_absent(T) || throw(ArgumentError("structure $T fields overlap"))
-    unsafe_pack(io, source, endianness, Packed)
+    @assert all(x->x>=0, field_gaps(T)[1]) "packed fields of structure $T overlap"
+    @warn "not yet implemented"
+    # unsafe_pack(io, source, endianness, Packed)
 end
 
 """
@@ -355,25 +373,25 @@ function parse_annotations!(strct_expr)
         push!(field_offsets, f.args[3])
         strct_expr.args[3].args[k] = f.args[2]
     end
-    println(Int.(field_offsets))
+
     return field_offsets
 end
 
 """
-Verify that the fields of a structure do not overlap. That may happen with offset
-packing, because it overloads `fieldoffset()` function.
-"""
-function overlaps_absent(::Type{T}) where {T}
-    if fieldcount(T) == 0
-        return true
-    end
-    field_offsets = fieldoffset.(T, 1:fieldcount(T))
-    field_sizes = sizeof.(fieldtypes(T))
-    idx = sortperm(offsets)
-    bounds = Iterators.flatten((f[1], f[1] + f[2] - 1)
-                               for f in zip(offsets[idx], sizes[idx]))
+Compute the gaps between the fields of a structure when packed.
 
-    return issorted(bounds)
+"""
+function field_gaps(::Type{T}) where {T}
+    f_offsets = Int.(StructIO.stream_offset.(T, 1:fieldcount(T)))
+    # Do not assume that the offsets are in ascending order
+    idx = sortperm(f_offsets)
+    gaps = zeros(Int, fieldcount(T) - 1)
+    for k in 2:fieldcount(T)
+        gaps[k - 1] = (f_offsets[idx[k]] - f_offsets[idx[k - 1]]
+                       - sizeof(fieldtype(T, idx[k - 1])))
+    end
+
+    return gaps,idx
 end
 
 end # module
