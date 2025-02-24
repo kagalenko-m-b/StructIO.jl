@@ -287,12 +287,14 @@ function unsafe_unpack(io, T, target, endianness, ::Type{Offset})
     if fieldcount(T) == 0
         return unsafe_unpack(io, T, target, endianness, Default)
     end
-    @assert all(x->x>=0, field_gaps(T)[1]) "packed fields of structure $T overlap"
+    f_gaps,idx = field_gaps(T)
+    @assert all(x->x>=0, f_gaps) "packed fields of structure $T overlap"
     target_ptr = Base.unsafe_convert(Ptr{Cvoid}, target)
     for i = 1:fieldcount(T)
-        fT = fieldtype(T, i)
-        target_i = target_ptr + fieldoffset(T, i)
-        seek(io, stream_offset(T, i))
+        k = idx[i]
+        fT = fieldtype(T, k)
+        target_i = target_ptr + fieldoffset(T, k)
+        skip(io, f_gaps[i])
         unsafe_unpack(io, fT, target_i, endianness, Packed)
     end
 end
@@ -385,10 +387,11 @@ function field_gaps(::Type{T}) where {T}
     f_offsets = Int.(StructIO.stream_offset.(T, 1:fieldcount(T)))
     # Do not assume that the offsets are in ascending order
     idx = sortperm(f_offsets)
-    gaps = zeros(Int, fieldcount(T) - 1)
+    gaps = zeros(Int, fieldcount(T))
+    gaps[1] = f_offsets[idx[1]]
     for k in 2:fieldcount(T)
-        gaps[k - 1] = (f_offsets[idx[k]] - f_offsets[idx[k - 1]]
-                       - sizeof(fieldtype(T, idx[k - 1])))
+        gaps[k] = (f_offsets[idx[k]] - f_offsets[idx[k - 1]]
+                   - sizeof(fieldtype(T, idx[k - 1])))
     end
 
     return gaps,idx
