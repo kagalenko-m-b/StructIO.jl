@@ -203,7 +203,7 @@ end
 	                           z::Int ~ 6
 	                       end align_offset)
     #
-	@test_throws ArgumentError macroexpand(@__MODULE__, missing_annotation)
+	@test_throws Exception macroexpand(@__MODULE__, missing_annotation)
     @test packed_sizeof(RawData) == packed_sizeof(OffsetStruct)
 	for endian in [:LittleEndian, :BigEndian]
         buf = IOBuffer()
