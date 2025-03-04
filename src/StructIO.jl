@@ -77,7 +77,7 @@ end
 @pure function packed_sizeof(T::DataType, ::Type{Offset})
     @assert fieldcount(T) != 0 && isbitstype(T)
     f_offsets = StructIO.stream_offset.(T, 1:fieldcount(T))
-    max_offset,idx_max = findmax(identity, f_offsets)
+    max_offset,idx_max = findmax(f_offsets)
     
     return max_offset + packed_sizeof(T.types[idx_max])
 end
