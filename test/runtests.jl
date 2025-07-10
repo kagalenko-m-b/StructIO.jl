@@ -216,6 +216,7 @@ end
         @test eof(buf)
         seekstart(buf)
         @test unpack(buf, GappedStruct, endian) == gapped_struct
+        @test eof(buf)
         seekstart(buf)
         @test unpack(buf, RawData, endian) == unpacked_raw_data
     end
