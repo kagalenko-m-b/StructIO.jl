@@ -266,6 +266,7 @@ function unsafe_unpack(io, T, target, endianness, ::Type{Packed}; gaps=field_gap
         isempty(gaps) || skip(io, gaps[i])
         unsafe_unpack(io, fT, target_i, endianness, Packed)
     end
+    isempty(gaps) || skip(io, gaps[fieldcount(T) + 1])
 end
 
 # `Packed` packing strategy override for `unsafe_pack`
@@ -286,6 +287,7 @@ function unsafe_pack(
         isempty(gaps) || skip(io, gaps[i])
         unsafe_pack(io, f, endianness, Packed)
     end
+    isempty(gaps) || skip(io, gaps[fieldcount(T) + 1])
 end
 
 """
@@ -337,7 +339,7 @@ function strip_gap_nodes!(strct_expr::Expr)
         !isa(f, LineNumberNode) || continue
         if f.head === :(::)
             # collect positions of gap nodes, when encountering a structure
-            # field, 
+            # field, store the accumulated gap and reset the accumulator
             if f.args[1] === :_ 
                 if isa(f.args[2], Integer) && f.args[2] >= 0
                     push!(gap_locations, k)
@@ -354,6 +356,8 @@ function strip_gap_nodes!(strct_expr::Expr)
             end
         end
     end
+    # do not neglect the gap after the last field
+    push!(field_gap_values, gap_value)
     if all(iszero, field_gap_values)
         field_gap_values = UInt[]
     end

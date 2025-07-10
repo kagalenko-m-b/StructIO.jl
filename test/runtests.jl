@@ -43,18 +43,19 @@ end align_packed
     dummy_4::UInt16
     dummy_5::UInt64
     D::UInt8
+    dummy_6::UInt8
 end align_packed
 
 @io struct GappedStruct
     A::UInt32
-    _::1
-    _::2
+    _::3
     B::UInt16
     _::4
     C::UInt128
     _::2
     _::8
     _D::UInt8
+    _::1
 end align_packed
 
 
@@ -197,20 +198,22 @@ end
 @testset "Struct with gaps" begin
     A,B,C,D = 1,2,3,4
     gapped_struct =  GappedStruct(A, B, C, D)
-    raw_data = RawData(UInt32(A),0xBE, 0xBEEF,UInt16(B),0xDEADBEEF,UInt128(C),
-                       0xBEEF, 0xDEADBEEFDEADBEEF, UInt8(D));
-    unpacked_raw_data = RawData(UInt32(A),0x00, 0x0000,UInt16(B),0x00000000,UInt128(C),
-                       0x0000, 0x0000000000000000, UInt8(D));
+    raw_data = RawData(A, 0xBE, 0xBEEF, B, 0xDEADBEEF, C, 0xBEEF, 0xDEADBEEFDEADBEEF,
+                       D, 0xBE);
+    unpacked_raw_data = RawData(A, 0, 0, B, 0, C, 0, 0, D, 0);
     #
+    @test all(StructIO.field_gaps(GappedStruct) .== [0, 3, 4, 10, 1])
     @test packed_sizeof(RawData) == packed_sizeof(GappedStruct)
 	for endian in [:LittleEndian, :BigEndian]
         buf = IOBuffer()
         pack(buf, raw_data, endian)
         seekstart(buf)
         @test unpack(buf, GappedStruct, endian) == gapped_struct
+        @test eof(buf)
         #
         buf = IOBuffer(zeros(UInt8, packed_sizeof(GappedStruct)), read=true, write=true)
         pack(buf, gapped_struct, endian)
+        @test eof(buf)
         seekstart(buf)
         @test unpack(buf, GappedStruct, endian) == gapped_struct
         seekstart(buf)
