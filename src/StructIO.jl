@@ -336,8 +336,7 @@ function strip_gap_nodes!(strct_expr::Expr)
     field_gap_values = UInt[]
     for k in 1:K
         f = strct_nodes[k]
-        !isa(f, LineNumberNode) || continue
-        if f.head === :(::)
+        if Meta.isexpr(f, :(::))
             # collect positions of gap nodes, when encountering a structure
             # field, store the accumulated gap and reset the accumulator
             if f.args[1] === :_ 
@@ -352,7 +351,7 @@ function strip_gap_nodes!(strct_expr::Expr)
                 push!(field_gap_values, gap_value)
                 gap_value = zero(UInt)
             else
-                error("unsupported structure field specificaion: $f")
+                error("unsupported structure field specification: $f")
             end
         end
     end
